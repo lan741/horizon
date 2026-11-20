@@ -1,4 +1,4 @@
-name: iOS IPA
+﻿name: iOS IPA
 
 # Builds the iPadOS app bundle from the Rust source on GitHub's macOS runner and uploads an .ipa.
 # No Xcode project: `packaging/ios/make-ipa.sh` assembles the bundle around the executable.
@@ -17,6 +17,10 @@ on:
         description: "codesign identity: '-' is ad-hoc (unsigned for App Store, fine for TrollStore/AltStore)"
         required: false
         default: "-"
+      engine_check:
+        description: "Also run the engine cross-compile diagnostic (long, never fails the build)"
+        required: false
+        default: "false"
   push:
     branches: ["ios/**"]
     paths:
@@ -33,7 +37,7 @@ concurrency:
 
 jobs:
   ipa:
-    name: Build Horizon.app → .ipa
+    name: Build Horizon.app 鈫?.ipa
     # Apple Silicon macOS with Xcode 16 and the iPhoneOS SDK; the port targets arm64 only.
     runs-on: macos-15
     timeout-minutes: 120
@@ -119,7 +123,7 @@ jobs:
             echo "3. **Sideloadly / AltStore / ESign**: sign with your own Apple ID or a certificate."
             echo ""
             echo "### On the device"
-            echo "The app writes \`Documents/Horizon/horizon-ios.log\` (Files app → On My iPad → Horizon)."
+            echo "The app writes \`Documents/Horizon/horizon-ios.log\` (Files app 鈫?On My iPad 鈫?Horizon)."
             echo "It logs the Metal device, the swapchain, the surface size and the measured frame rate every two"
             echo "seconds, which is how 120 Hz on a ProMotion iPad is confirmed."
           } >> "$GITHUB_STEP_SUMMARY"
@@ -134,3 +138,59 @@ jobs:
             dist/ios/Payload/Horizon.app/Info.plist
           if-no-files-found: warn
           retention-days: 30
+
+  # What separates M0 from M1, measured: type-check the whole engine for the device. This is a
+  # diagnostic, not a gate — it never fails the build, and its log is the work list for M1.
+  engine-check:
+    name: Engine cross-compile diagnostic
+    if: github.event_name == 'workflow_dispatch' && inputs.engine_check == 'true'
+    runs-on: macos-15
+    timeout-minutes: 180
+    continue-on-error: true
+
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Toolchain and SDK
+        run: |
+          set -euo pipefail
+          rustup target add aarch64-apple-ios
+
+      - name: Cache cargo and the iOS target directory
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: ios-engine
+
+      - name: cargo check -p horizon-client for aarch64-apple-ios
+        run: |
+          set +e
+          cargo check -p horizon-client --target aarch64-apple-ios > engine-check.log 2>&1
+          status=$?
+          echo "cargo check exited $status" | tee -a engine-check.log
+          grep -E "^error" engine-check.log | sort | uniq -c | sort -rn | head -40 || true
+          tail -120 engine-check.log || true
+          exit 0
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "## Engine on iOS: diagnostic"
+            echo ""
+            errors=$(grep -cE "^error(\[|:)" engine-check.log 2>/dev/null || echo 0)
+            echo "\`cargo check -p horizon-client --target aarch64-apple-ios\` reported **$errors** errors."
+            echo ""
+            echo '```'
+            grep -E "^error(\[|:)" engine-check.log 2>/dev/null | sort | uniq -c | sort -rn | head -40 || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload the log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: engine-check-${{ github.run_number }}
+          path: engine-check.log
+          if-no-files-found: warn
+          retention-days: 14
