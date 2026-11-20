@@ -94,6 +94,37 @@ It is a diagnostic, never a gate. Three layers have come off it so far:
 Run the diagnostic (`workflow_dispatch` with `engine_check: true`) to reproduce the current layer;
 its log is the next row of this table.
 
+## Everything runs on the device
+
+There is no launcher, no relay and no second process on iPadOS: the app is started by the system,
+reads the player's own Minecraft installation once (imported through the Files app into
+`Documents/Horizon`), and from then on builds assets, ticks worlds and renders frames on the
+device. The desktop executable's extras that reach outside — the anonymous heartbeat, Discord
+presence, the launcher's lease registry — are not part of this target: `horizon-game` is the entry
+(`crates/horizon-official` stays the desktop product), and the holder is the no-op shim.
+
+Two folders matter to a player: `Documents/Horizon` (worlds, `options.txt`, packs, the log) and
+`Documents/Horizon/horizon-ios.log`. Both are visible in the Files app, so a save or a pack can be
+dropped in from a computer without a cable.
+
+## Mods and shaders on iOS
+
+The extensions survive; only the ones that assume a desktop process are refused.
+
+| Feature | On iOS | Why |
+| --- | --- | --- |
+| Content mods (`.hmod`: blocks, items, data, assets) | kept | they are data and assets, and the loader is pure Rust |
+| Wasm code mods | kept, **interpreted** | iOS forbids JIT; wasmtime's `pulley` interpreter is already compiled in (`horizon-mod-wasm`'s `pulley` feature), the cost is speed, not function |
+| Native (dylib) mods | refused, with a message | a signed app cannot load a library that is not in its bundle; no workaround exists |
+| Shader packs (GLSL) | kept where the pack translates | `horizon-shaders` builds naga IR, wgpu lowers it to Metal Shading Language; a pack that relies on desktop GL behaviour is refused at load rather than crashing the frame |
+| Resource packs, OptiFine CTM/CEM, Polytone | kept | pure-Rust parsers and textures, no platform calls |
+| HDR output | off | the swapchain metadata path is Vulkan's; SDR output stays |
+| Splitscreen | off | it is a desktop windowing feature |
+
+The mod runtime stays **in-process** for that reason: the out-of-process holder exists to keep a
+launcher's cache files leased while a child runs the game, and iOS has neither the child nor the
+launcher. `holder_ios.rs` is the whole of that difference.
+
 ## Limits to accept
 
 - **Mods are interpreted.** With Pulley, a heavy mod is slower than on desktop; the mod screen
