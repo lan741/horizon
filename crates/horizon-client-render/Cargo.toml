@@ -73,7 +73,8 @@ rustix = { version = "1", default-features = false, features = ["std", "time"] }
 [target.'cfg(windows)'.dependencies]
 wgpu = { version = "30.0.1", default-features = false, features = ["dx12"] }
 
-[target.'cfg(not(target_os = "macos"))'.dependencies]
+# iOS has no EGL either: Metal only, like macOS (docs/ios-port.md).
+[target.'cfg(not(any(target_os = "macos", target_os = "ios")))'.dependencies]
 wgpu = { version = "30.0.1", default-features = false, features = ["gles"] }
 
 [features]
