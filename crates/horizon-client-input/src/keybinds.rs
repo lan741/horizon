@@ -301,7 +301,7 @@ pub use horizon_client_core::key_display::{
 /// A key event: what the layout writes on its key, without modifiers, names
 /// that key from now on (`key_display::learn_layout`), so an AZERTY player's
 /// Q key shows A.
-#[cfg(not(target_os = "android"))]
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
 pub fn learn_layout(event: &winit::event::KeyEvent) {
     use winit::keyboard::{Key, PhysicalKey};
     use winit::platform::modifier_supplement::KeyEventExtModifierSupplement;
@@ -319,8 +319,9 @@ pub fn learn_layout(event: &winit::event::KeyEvent) {
     }
 }
 
-// Android does not expose winit's unmodified key extension.
-#[cfg(target_os = "android")]
+// Android and iOS do not expose winit's unmodified key extension: a touch keyboard reports the
+// layout's own characters, so there is no physical layout to learn.
+#[cfg(any(target_os = "android", target_os = "ios"))]
 pub fn learn_layout(_event: &winit::event::KeyEvent) {}
 
 /// Vanilla's name for the key the layout produced (`InputEvent.Key.getKeycode`):
@@ -359,6 +360,7 @@ pub fn layout_key_name(
 /// A code telling physical keys apart, named or not (`InputEvent.Key.getScanCode`):
 /// the platform scan code, or the native code winit reports for a key it
 /// doesn't identify; 0 when there is neither. Stable within a platform only.
+#[cfg(not(target_os = "ios"))]
 pub fn raw_key_code(physical: winit::keyboard::PhysicalKey) -> u32 {
     use winit::keyboard::{NativeKeyCode, PhysicalKey};
     use winit::platform::scancode::PhysicalKeyExtScancode;
@@ -370,6 +372,13 @@ pub fn raw_key_code(physical: winit::keyboard::PhysicalKey) -> u32 {
         },
         PhysicalKey::Code(_) => physical.to_scancode().unwrap_or(0),
     }
+}
+
+/// iOS reports no scan codes (winit's `scancode` extension is desktop-only), and the platform's
+/// own key events are a touch keyboard's text, not physical positions: 0 for every key.
+#[cfg(target_os = "ios")]
+pub fn raw_key_code(_physical: winit::keyboard::PhysicalKey) -> u32 {
+    0
 }
 
 /// Current bindings by mapping name.
