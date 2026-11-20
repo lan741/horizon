@@ -55,6 +55,20 @@
 	<!-- iOS 15 is the floor: Metal 2, ProMotion frame pacing and the modern launch screen. -->
 	<key>MinimumOSVersion</key>
 	<string>15.0</string>
+	<!-- What an Xcode-built bundle carries; installers and UIKit read these to decide the app is
+	     a real iOS program. @SDK@ is filled in by packaging/ios/make-ipa.sh from the SDK in use. -->
+	<key>DTPlatformName</key>
+	<string>iphoneos</string>
+	<key>DTPlatformVersion</key>
+	<string>@SDK@</string>
+	<key>DTSDKName</key>
+	<string>iphoneos@SDK@</string>
+	<key>DTCompiler</key>
+	<string>com.apple.compilers.llvm.clang.1_0</string>
+	<key>DTPlatformBuild</key>
+	<string>@SDKBUILD@</string>
+	<key>BuildMachineOSBuild</key>
+	<string>@OSBUILD@</string>
 	<key>UIDeviceFamily</key>
 	<array>
 		<integer>1</integer>
