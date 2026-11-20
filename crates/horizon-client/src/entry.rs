@@ -26,9 +26,7 @@ impl Startup {
 pub fn prepare() -> Startup {
     horizon_mod_package::holder::enter();
     let result: crate::Result<_> = (|| {
-        let mut command = std::process::Command::new(std::env::current_exe()?);
-        command.args(std::env::args_os().skip(1));
-        let launch = LaunchArguments::for_command(&command)?;
+        let launch = launch_arguments()?;
         let options = game::Options::validate(launch.clone())?;
         Ok((launch, options))
     })();
@@ -44,6 +42,24 @@ pub fn prepare() -> Startup {
         launch,
         options,
         _capture: capture,
+    }
+}
+
+/// The command line the game was started with.
+///
+/// Desktop snapshots it through a fresh `Command` for the executable, which is how a launcher's
+/// environment and overrides reach it. iOS cannot fork or exec, so there the process's own
+/// arguments and environment are the snapshot (docs/ios-port.md).
+fn launch_arguments() -> std::io::Result<LaunchArguments> {
+    #[cfg(target_os = "ios")]
+    {
+        LaunchArguments::from_process()
+    }
+    #[cfg(not(target_os = "ios"))]
+    {
+        let mut command = std::process::Command::new(std::env::current_exe()?);
+        command.args(std::env::args_os().skip(1));
+        LaunchArguments::for_command(&command)
     }
 }
 
