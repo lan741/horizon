@@ -19,5 +19,9 @@ wgpu = { version = "30.0.1", default-features = false, features = ["std", "parki
 pollster = "0.4"
 log = "0.4"
 
+[dev-dependencies]
+# Parses the platform shader in tests: a validation error at device creation panics a device app.
+naga = { version = "30.0.1", features = ["wgsl-in"] }
+
 [lints]
 workspace = true
