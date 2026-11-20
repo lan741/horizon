@@ -56,8 +56,19 @@ impl Gpu {
             info.device_type,
             info.backend
         );
+        // The adapter's own limits, not `Limits::default()`: iOS Metal allows 15 inter-stage
+        // shader variables where wgpu's defaults ask for 16, and a single over-ask fails the whole
+        // device ("Limit 'max_inter_stage_shader_variables' value 16 is better than allowed 15").
+        let limits = adapter.limits();
+        log::info!(
+            "Horizon iOS: device limits: inter-stage variables {}, texture 2D {}, buffer {} MiB",
+            limits.max_inter_stage_shader_variables,
+            limits.max_texture_dimension_2d,
+            limits.max_buffer_size / (1024 * 1024)
+        );
         let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
             label: Some("horizon-ios"),
+            required_limits: limits,
             ..Default::default()
         }))
         .map_err(|error| format!("no Metal device: {error}"))?;
