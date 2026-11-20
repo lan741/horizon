@@ -10,6 +10,10 @@ pub mod game_identity;
     any(target_os = "linux", target_os = "macos", windows)
 ))]
 pub mod holder;
+/// iOS: no helper process to hand the leases to, so the holder is a no-op (holder_ios.rs).
+#[cfg(all(feature = "runtime-process", target_os = "ios"))]
+#[path = "holder_ios.rs"]
+pub mod holder;
 pub mod icon;
 #[cfg(feature = "index")]
 pub mod index;
@@ -34,7 +38,11 @@ pub mod modpack;
 pub mod output;
 pub mod packages;
 pub mod runtime;
-#[cfg(feature = "runtime-process")]
+/// The launcher's lease registry: desktop only, since it exists for the holder process.
+#[cfg(all(
+    feature = "runtime-process",
+    any(target_os = "linux", target_os = "macos", windows)
+))]
 pub mod runtime_leases;
 pub mod sdk;
 pub mod selection;
