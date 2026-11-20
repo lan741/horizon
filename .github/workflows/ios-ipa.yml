@@ -1,4 +1,4 @@
-﻿name: iOS IPA
+name: iOS IPA
 
 # Builds the iPadOS app bundle from the Rust source on GitHub's macOS runner and uploads an .ipa.
 # No Xcode project: `packaging/ios/make-ipa.sh` assembles the bundle around the executable.
@@ -19,6 +19,10 @@ on:
         default: "-"
       engine_check:
         description: "Also run the engine cross-compile diagnostic (long, never fails the build)"
+        required: false
+        default: "false"
+      engine_app:
+        description: "Also bundle the engine executable itself (untested on device)"
         required: false
         default: "false"
   push:
@@ -192,5 +196,55 @@ jobs:
         with:
           name: engine-check-${{ github.run_number }}
           path: engine-check.log
+          if-no-files-found: warn
+          retention-days: 14
+
+  # The real thing: the engine executable itself, bundled the same way. Opt-in while M1/M2 are
+  # open — the build proves the link, and the device tells us where the first frame stops.
+  engine-app:
+    name: Bundle the engine executable
+    if: github.event_name == 'workflow_dispatch' && inputs.engine_app == 'true'
+    runs-on: macos-15
+    timeout-minutes: 180
+    continue-on-error: true
+
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Toolchain and SDK
+        run: |
+          set -euo pipefail
+          rustup target add aarch64-apple-ios
+
+      - name: Cache cargo and the iOS target directory
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: ios-engine-app
+
+      - name: Build horizon-game for the device
+        run: |
+          set -euo pipefail
+          cargo build --release --target aarch64-apple-ios -p horizon-game --bin horizon-client 2>&1 | tail -40
+          BIN=target/aarch64-apple-ios/release/horizon-client
+          file "$BIN"
+          du -h "$BIN"
+
+      - name: Bundle and pack
+        run: |
+          set -euo pipefail
+          chmod +x packaging/ios/make-ipa.sh
+          BIN=target/aarch64-apple-ios/release/horizon-client \
+          VERSION="${{ inputs.version || '0.1.0' }}-engine" \
+          BUILD="${GITHUB_RUN_NUMBER}" \
+          BUNDLE_ID=dev.horizon.ios.engine \
+          packaging/ios/make-ipa.sh
+
+      - name: Upload
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: engine-ipa-${{ github.run_number }}
+          path: dist/ios/*.ipa
           if-no-files-found: warn
           retention-days: 14
