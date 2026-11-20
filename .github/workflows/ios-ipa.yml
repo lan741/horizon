@@ -220,7 +220,15 @@ jobs:
       - name: Cache cargo and the iOS target directory
         uses: Swatinem/rust-cache@v2
         with:
-          key: ios-engine-app
+          # The same cache the diagnostic uses: its `cargo check` artifacts make the first step
+          # below seconds instead of half an hour.
+          key: ios-engine
+          cache-on-failure: true
+
+      - name: Type-check the game binary first
+        run: |
+          set -euo pipefail
+          cargo check -p horizon-game --bin horizon-client --target aarch64-apple-ios 2>&1 | tail -30
 
       - name: Build horizon-game for the device
         run: |
