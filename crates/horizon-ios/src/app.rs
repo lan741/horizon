@@ -151,6 +151,8 @@ pub struct App {
     frames_in_window: u32,
     /// Frames presented so far: the first one is a breadcrumb.
     frames_drawn: u64,
+    /// Frames the surface refused, for throttled logging.
+    failures: u64,
     reported_fps: f32,
 }
 
@@ -164,6 +166,7 @@ impl Default for App {
             window_started: None,
             frames_in_window: 0,
             frames_drawn: 0,
+            failures: 0,
             reported_fps: 0.0,
         }
     }
@@ -319,12 +322,23 @@ impl ApplicationHandler for App {
                 if let Some(gpu) = self.gpu.as_mut()
                     && let Err(error) = gpu.render(&input)
                 {
-                    log::warn!("Horizon iOS: frame dropped: {error}");
+                    // A dropped frame is expected (a backgrounded screen); a running failure is
+                    // not, and must not flood the log at the display's rate.
+                    self.failures += 1;
+                    if self.failures <= 3 || self.failures % 300 == 0 {
+                        log::warn!(
+                            "Horizon iOS: frame dropped ({} so far): {error}",
+                            self.failures
+                        );
+                    }
                 }
                 self.note_frame();
                 // One frame per display refresh: winit paces this from the CADisplayLink, so this
-                // is 120 requests per second on a ProMotion panel and 60 elsewhere.
-                if let Some(window) = self.window.as_ref() {
+                // is 120 requests per second on a ProMotion panel and 60 elsewhere. Without a
+                // device there is nothing to pace: wait for the system instead of spinning.
+                if self.gpu.is_some()
+                    && let Some(window) = self.window.as_ref()
+                {
                     window.request_redraw();
                 }
             }
@@ -333,7 +347,11 @@ impl ApplicationHandler for App {
     }
 
     fn about_to_wait(&mut self, _event_loop: &ActiveEventLoop) {
-        if let Some(window) = self.window.as_ref() {
+        // Only while frames can be drawn: without a device this would ask for 120 redraws a
+        // second that render nothing.
+        if self.gpu.is_some()
+            && let Some(window) = self.window.as_ref()
+        {
             window.request_redraw();
         }
     }
