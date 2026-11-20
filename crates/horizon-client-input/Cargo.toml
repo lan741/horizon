@@ -14,7 +14,9 @@ horizon-hooks = { path = "../horizon-hooks" }
 winit = "0.30.13"
 log = "0.4"
 png = "0.18"
-[target.'cfg(not(target_os = "android"))'.dependencies]
+# The system clipboard. iOS has no arboard backend either, and wayland-backend does not build
+# for it: text copied in the game stays in the game until a pasteboard bridge lands (M3).
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 arboard = { version = "3.6.1", default-features = false, features = ["wayland-data-control"] }
 
 [dev-dependencies]
