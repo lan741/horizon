@@ -79,6 +79,21 @@ M1 is the only stage that edits engine files: `entry.rs` gains an iOS constructo
 `LaunchArguments` and the client's `Options::read` runs against the container paths. Everything
 else is additive — a platform crate plus wiring — which is why the port does not fork the game.
 
+### M1's work list, measured
+
+The `iOS IPA` workflow has an opt-in `engine_check` input that runs
+`cargo check -p horizon-client --target aarch64-apple-ios` on the macOS runner and keeps the log.
+It is a diagnostic, never a gate. Three layers have come off it so far:
+
+| Layer | What it was | Fix |
+| --- | --- | --- |
+| `wayland-backend` | `arboard` (the clipboard) was a dependency of every non-Android target, and wayland-backend has no iOS build | `horizon-client-input`: arboard is `cfg(not(any(android, ios)))`, and the clipboard falls back to the text the game copied (a pasteboard bridge replaces it in M3) |
+| `horizon-hdr` | the Vulkan `VK_EXT_hdr_metadata` path was gated on `not(macos)` | gated on `not(any(macos, ios))`; `ash` is no longer a dependency there |
+| `horizon-mod-package` | `holder` (the out-of-process mod runtime's lease holder) is gated on Linux, macOS and Windows, and `runtime_leases` calls into it | **decision, not a patch**: iOS cannot spawn a helper process, so `runtime-process` must be off on iOS — mods run in-process on wasmtime's Pulley interpreter, and the holder/lease/lock path is compiled out with a clear refusal for what it used to provide |
+
+Run the diagnostic (`workflow_dispatch` with `engine_check: true`) to reproduce the current layer;
+its log is the next row of this table.
+
 ## Limits to accept
 
 - **Mods are interpreted.** With Pulley, a heavy mod is slower than on desktop; the mod screen
