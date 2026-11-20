@@ -44,9 +44,15 @@ cp "$BIN" "$OUT/Payload/$APP_NAME.app/$APP_NAME"
 chmod 755 "$OUT/Payload/$APP_NAME.app/$APP_NAME"
 
 # Info.plist: the placeholders keep the checked-in file versionless.
+SDK_VERSION="$(xcrun --sdk iphoneos --show-sdk-version 2>/dev/null || echo 18.0)"
+SDK_BUILD="$(xcrun --sdk iphoneos --show-sdk-build-version 2>/dev/null || echo 22A000)"
+OS_BUILD="$(sw_vers -buildVersion 2>/dev/null || echo 24A000)"
 sed -e "s/@VERSION@/$VERSION/g" \
     -e "s/@BUILD@/$BUILD/g" \
     -e "s/@BUNDLE_ID@/$BUNDLE_ID/g" \
+    -e "s/@SDK@/$SDK_VERSION/g" \
+    -e "s/@SDKBUILD@/$SDK_BUILD/g" \
+    -e "s/@OSBUILD@/$OS_BUILD/g" \
     "$here/Info.plist" > "$OUT/Payload/$APP_NAME.app/Info.plist"
 plutil -lint "$OUT/Payload/$APP_NAME.app/Info.plist" >/dev/null
 
