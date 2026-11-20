@@ -1,0 +1,136 @@
+name: iOS IPA
+
+# Builds the iPadOS app bundle from the Rust source on GitHub's macOS runner and uploads an .ipa.
+# No Xcode project: `packaging/ios/make-ipa.sh` assembles the bundle around the executable.
+on:
+  workflow_dispatch:
+    inputs:
+      bundle_id:
+        description: "Bundle identifier (change it if you sign with your own certificate)"
+        required: false
+        default: "dev.horizon.ios"
+      version:
+        description: "Version (CFBundleShortVersionString)"
+        required: false
+        default: "0.1.0"
+      sign_identity:
+        description: "codesign identity: '-' is ad-hoc (unsigned for App Store, fine for TrollStore/AltStore)"
+        required: false
+        default: "-"
+  push:
+    branches: ["ios/**"]
+    paths:
+      - "crates/horizon-ios/**"
+      - "packaging/ios/**"
+      - ".github/workflows/ios-ipa.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-ipa-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ipa:
+    name: Build Horizon.app → .ipa
+    # Apple Silicon macOS with Xcode 16 and the iPhoneOS SDK; the port targets arm64 only.
+    runs-on: macos-15
+    timeout-minutes: 120
+
+    env:
+      BUNDLE_ID: ${{ github.event.inputs.bundle_id || 'dev.horizon.ios' }}
+      VERSION: ${{ github.event.inputs.version || '0.1.0' }}
+      SIGN_IDENTITY: ${{ github.event.inputs.sign_identity || '-' }}
+      CARGO_TERM_COLOR: always
+
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Toolchain and SDK
+        run: |
+          set -euo pipefail
+          xcodebuild -version
+          xcrun --sdk iphoneos --show-sdk-version
+          rustup show active-toolchain
+          rustup target add aarch64-apple-ios
+
+      - name: Cache cargo and the iOS target directory
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: ios-aarch64
+
+      - name: Host tests (touch model, paths, uniform layout)
+        run: cargo test -p horizon-ios --lib
+
+      - name: Build the device executable
+        run: |
+          set -euo pipefail
+          cargo build --release --target aarch64-apple-ios -p horizon-ios
+          BIN=target/aarch64-apple-ios/release/horizon-ios
+          file "$BIN"
+          size=$(du -h "$BIN" | cut -f1)
+          echo "executable: $size"
+          # An iOS executable must be a Mach-O arm64 image, not a static archive or a script.
+          file "$BIN" | grep -q "Mach-O 64-bit executable arm64"
+
+      - name: Assemble the app bundle and pack the .ipa
+        run: |
+          set -euo pipefail
+          chmod +x packaging/ios/make-ipa.sh
+          BIN=target/aarch64-apple-ios/release/horizon-ios \
+          VERSION="${VERSION}" \
+          BUILD="${GITHUB_RUN_NUMBER}" \
+          BUNDLE_ID="${BUNDLE_ID}" \
+          SIGN_IDENTITY="${SIGN_IDENTITY}" \
+          packaging/ios/make-ipa.sh
+
+      - name: Verify the bundle
+        run: |
+          set -euo pipefail
+          APP="dist/ios/Payload/Horizon.app"
+          plutil -lint "$APP/Info.plist"
+          /usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$APP/Info.plist"
+          /usr/libexec/PlistBuddy -c "Print :CADisableMinimumFrameDurationOnPhone" "$APP/Info.plist"
+          ls -la "$APP"
+          # The .ipa is a zip whose first entry is Payload/, and its bundle must be signed.
+          unzip -l "dist/ios/Horizon-${VERSION}.ipa" | head -20
+          unzip -o -q "dist/ios/Horizon-${VERSION}.ipa" -d dist/ios/verify
+          codesign -dv --verbose=2 "dist/ios/verify/Payload/Horizon.app" 2>&1 | head -10
+          file "dist/ios/verify/Payload/Horizon.app/Horizon"
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "## Horizon for iPadOS"
+            echo ""
+            echo "| | |"
+            echo "| --- | --- |"
+            echo "| Bundle | \`${BUNDLE_ID}\` |"
+            echo "| Version | ${VERSION} (build ${GITHUB_RUN_NUMBER}) |"
+            echo "| Signature | \`${SIGN_IDENTITY}\` |"
+            echo "| Target | \`aarch64-apple-ios\`, iOS 15+, arm64 + Metal |"
+            echo ""
+            echo "### Install"
+            echo "1. Download the artifact and unzip it: \`Horizon-${VERSION}.ipa\`."
+            echo "2. **TrollStore**: share the .ipa to TrollStore and install."
+            echo "3. **Sideloadly / AltStore / ESign**: sign with your own Apple ID or a certificate."
+            echo ""
+            echo "### On the device"
+            echo "The app writes \`Documents/Horizon/horizon-ios.log\` (Files app → On My iPad → Horizon)."
+            echo "It logs the Metal device, the swapchain, the surface size and the measured frame rate every two"
+            echo "seconds, which is how 120 Hz on a ProMotion iPad is confirmed."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload the .ipa
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Horizon-ios-ipa-${{ github.run_number }}
+          path: |
+            dist/ios/*.ipa
+            dist/ios/Payload/Horizon.app/Info.plist
+          if-no-files-found: warn
+          retention-days: 30

@@ -11,6 +11,8 @@ members = [
     "crates/horizon-game",
     "crates/horizon-official",
     "crates/horizon-heartbeat",
+    # The iOS/iPadOS app bundle's platform layer (docs/ios-port.md).
+    "crates/horizon-ios",
 
     "crates/horizon-core",
     "crates/horizon-platform",

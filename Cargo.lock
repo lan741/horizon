@@ -2235,6 +2235,16 @@ name = "horizon-internals"
 version = "0.1.0"
 
 [[package]]
+name = "horizon-ios"
+version = "0.1.0"
+dependencies = [
+ "log",
+ "pollster",
+ "wgpu",
+ "winit",
+]
+
+[[package]]
 name = "horizon-items"
 version = "0.1.0"
 dependencies = [
