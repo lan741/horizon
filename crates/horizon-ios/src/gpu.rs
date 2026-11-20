@@ -270,8 +270,8 @@ fn uniform_bytes(input: &FrameInput, size: (u32, u32)) -> [u8; UNIFORM_BYTES] {
     put(0, size.0 as f32);
     put(4, size.1 as f32);
     put(8, input.time);
-    let active = input.points.iter().filter(|point| point[2] > 0.0).count() as f32;
-    put(12, active);
+    let active_fingers = input.points.iter().filter(|point| point[2] > 0.0).count() as f32;
+    put(12, active_fingers);
     put(16, input.stick[0]);
     put(20, input.stick[1]);
     put(24, input.look[0]);
@@ -289,7 +289,7 @@ const SHADER: &str = r#"
 struct Uniforms {
     resolution: vec2<f32>,
     time: f32,
-    active: f32,
+    active_fingers: f32,
     stick: vec2<f32>,
     look: vec2<f32>,
     points: array<vec4<f32>, 2>,
@@ -342,6 +342,13 @@ fn fs(@builtin(position) position: vec4<f32>) -> @location(0) vec4<f32> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The device rejects a shader with a validation error, and on iOS that panics the app. The
+    /// same parse runs here, so a bad identifier fails `cargo test` instead of the player's screen.
+    #[test]
+    fn the_shader_parses() {
+        naga::front::wgsl::parse_str(SHADER).expect("the platform shader must parse as WGSL");
+    }
 
     #[test]
     fn the_uniform_layout_matches_the_shader() {
