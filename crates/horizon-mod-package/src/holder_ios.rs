@@ -9,6 +9,12 @@
 use crate::output::Capture;
 use crate::selection::LaunchArguments;
 
+/// The holder's wire marker. Nothing scans for it on iOS (there is no second process to
+/// recognise), but `horizon_game::prepare_main_stack` keeps it in the image on every platform
+/// and its bytes must stay contiguous, so the constant is the desktop one.
+#[used]
+pub static CAPABILITY: [u8; 26] = *b"horizon-private-holder-v2;";
+
 /// Nothing to retain: the app's own process is the holder.
 pub fn retain_capability() {}
 
