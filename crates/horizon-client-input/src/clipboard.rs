@@ -4,7 +4,7 @@
 //! `ChatFormatting.stripFormatting`.
 
 use std::cell::RefCell;
-#[cfg(not(target_os = "android"))]
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
 use std::cell::RefMut;
 use winit::keyboard::{Key, KeyCode, PhysicalKey};
 
@@ -78,7 +78,7 @@ pub fn types_text(edit_modifier: bool, alt: bool, altgr_is_ctrl_alt: bool) -> bo
 
 /// `StringUtil.isAllowedChatCharacter`.
 pub fn is_allowed_chat_character(c: char) -> bool {
-    c != '§' && c >= ' ' && c != '\u{7f}'
+    c != '搂' && c >= ' ' && c != '\u{7f}'
 }
 
 /// `StringUtil.filterText`: the allowed characters, and line breaks where
@@ -90,12 +90,12 @@ pub fn filter_text(input: &str, multiline: bool) -> String {
         .collect()
 }
 
-/// `ChatFormatting.stripFormatting`: `§` followed by a format code removed.
+/// `ChatFormatting.stripFormatting`: `搂` followed by a format code removed.
 pub fn strip_formatting(input: &str) -> String {
     let mut out = String::with_capacity(input.len());
     let mut chars = input.chars().peekable();
     while let Some(c) = chars.next() {
-        if c == '§'
+        if c == '搂'
             && chars.peek().is_some_and(
                 |n| matches!(n.to_ascii_lowercase(), '0'..='9' | 'a'..='f' | 'k'..='o' | 'r'),
             )
@@ -130,7 +130,7 @@ pub trait Clipboard {
 /// It reads and writes through `&self`, as a mod's `ClientHost` reaches it.
 #[derive(Default)]
 pub struct SystemClipboard {
-    #[cfg(not(target_os = "android"))]
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
     system: RefCell<Option<arboard::Clipboard>>,
     /// The text Horizon last copied (`horizon-ctl status`).
     copied: RefCell<Option<String>>,
@@ -142,7 +142,7 @@ impl SystemClipboard {
         self.copied.borrow().clone()
     }
     /// The system clipboard, connected on first use.
-    #[cfg(not(target_os = "android"))]
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
     fn system(&self) -> RefMut<'_, Option<arboard::Clipboard>> {
         let mut system = self.system.borrow_mut();
         if system.is_none() {
@@ -152,9 +152,11 @@ impl SystemClipboard {
     }
     /// `KeyboardHandler.getClipboard`: empty when there is no text.
     pub fn text(&self) -> String {
-        #[cfg(target_os = "android")]
+        // Android and iOS have no arboard backend: text copied in the game is the clipboard
+        // there, and a native bridge (the pasteboard) replaces this in the iOS port (M3).
+        #[cfg(any(target_os = "android", target_os = "ios"))]
         return self.copied().unwrap_or_default();
-        #[cfg(not(target_os = "android"))]
+        #[cfg(not(any(target_os = "android", target_os = "ios")))]
         {
             let mut system = self.system();
             let Some(board) = system.as_mut() else {
@@ -177,7 +179,7 @@ impl SystemClipboard {
             return;
         }
         *self.copied.borrow_mut() = Some(text.to_owned());
-        #[cfg(not(target_os = "android"))]
+        #[cfg(not(any(target_os = "android", target_os = "ios")))]
         {
             let mut system = self.system();
             if let Some(board) = system.as_mut()
@@ -403,22 +405,22 @@ mod tests {
         let q = PhysicalKey::Code(KeyCode::KeyQ);
         // AZERTY: the key at Q's position types an A.
         assert_eq!(shortcut_letter(&Key::Character("a".into()), q), Some('a'));
-        // Russian: the key at C's position types с.
+        // Russian: the key at C's position types 褋.
         let c = PhysicalKey::Code(KeyCode::KeyC);
-        assert_eq!(shortcut_letter(&Key::Character("с".into()), c), Some('c'));
+        assert_eq!(shortcut_letter(&Key::Character("褋".into()), c), Some('c'));
         assert_eq!(shortcut_letter(&Key::Character("C".into()), q), Some('c'));
     }
 
     #[test]
     fn filter_text_keeps_line_breaks_only_for_multiline_fields() {
-        let s = "a\u{7}b§c\nd\re\u{80}";
+        let s = "a\u{7}b搂c\nd\re\u{80}";
         assert_eq!(filter_text(s, false), "abcde\u{80}");
         assert_eq!(filter_text(s, true), "abc\nde\u{80}");
-        assert_eq!(strip_formatting("§aRed§r §zx§"), "Red §zx§");
-        assert_eq!(helper_clipboard_contents("§lone\r\ntwo"), "one\ntwo");
+        assert_eq!(strip_formatting("搂aRed搂r 搂zx搂"), "Red 搂zx搂");
+        assert_eq!(helper_clipboard_contents("搂lone\r\ntwo"), "one\ntwo");
         // TextFieldHelper.getClipboardContents runs before insertText's filter.
         assert_eq!(
-            filter_text(&helper_clipboard_contents("§aHello"), false),
+            filter_text(&helper_clipboard_contents("搂aHello"), false),
             "Hello"
         );
     }
