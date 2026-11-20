@@ -17,13 +17,18 @@ use winit::window::{Window, WindowId};
 
 /// The app's entry: prepare storage, logging, then hand over to winit.
 pub fn run() -> ! {
+    // Before anything: a crash that kills the process leaves this file behind, so the last step
+    // reached is known even when no console is attached (a sideloaded app has none).
+    breadcrumb("main: entered");
     let data = match paths::prepare() {
         Ok(dir) => dir,
         Err(error) => {
             eprintln!("Horizon iOS: cannot prepare the container: {error}");
+            breadcrumb(&format!("main: container failed: {error}"));
             std::process::exit(2);
         }
     };
+    breadcrumb(&format!("main: data root {}", data.display()));
     init_logging(&data);
     install_panic_hook();
     log::info!(
@@ -34,21 +39,45 @@ pub fn run() -> ! {
         std::env::consts::ARCH
     );
 
+    breadcrumb("main: creating the event loop");
     let event_loop = match EventLoop::new() {
         Ok(event_loop) => event_loop,
         Err(error) => {
             log::error!("Horizon iOS: no event loop: {error}");
+            breadcrumb(&format!("main: event loop failed: {error}"));
             std::process::exit(3);
         }
     };
+    breadcrumb("main: event loop created, running");
     event_loop.set_control_flow(ControlFlow::Poll);
     let mut app = App::default();
     match event_loop.run_app(&mut app) {
-        Ok(()) => std::process::exit(0),
+        Ok(()) => {
+            breadcrumb("main: event loop ended");
+            std::process::exit(0)
+        }
         Err(error) => {
             log::error!("Horizon iOS: the event loop stopped: {error}");
+            breadcrumb(&format!("main: event loop stopped: {error}"));
             std::process::exit(4);
         }
+    }
+}
+
+/// One line per startup step in `Documents/Horizon/boot.log`, flushed immediately: the file is the
+/// only witness a crash leaves behind.
+fn breadcrumb(step: &str) {
+    use std::io::Write;
+    static START: OnceLock<Instant> = OnceLock::new();
+    let start = START.get_or_init(Instant::now);
+    let path = paths::data_dir().join("boot.log");
+    if let Ok(mut file) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&path)
+    {
+        let _ = writeln!(file, "{:>7} ms  {step}", start.elapsed().as_millis());
+        let _ = file.flush();
     }
 }
 
@@ -107,6 +136,7 @@ fn install_panic_hook() {
     let previous = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
         log::error!("Horizon iOS panic: {info}");
+        breadcrumb(&format!("panic: {info}"));
         previous(info);
     }));
 }
@@ -119,6 +149,8 @@ pub struct App {
     /// The last frame count report: a 120 Hz panel must show ~120 here.
     window_started: Option<Instant>,
     frames_in_window: u32,
+    /// Frames presented so far: the first one is a breadcrumb.
+    frames_drawn: u64,
     reported_fps: f32,
 }
 
@@ -131,6 +163,7 @@ impl Default for App {
             started: Instant::now(),
             window_started: None,
             frames_in_window: 0,
+            frames_drawn: 0,
             reported_fps: 0.0,
         }
     }
@@ -196,23 +229,31 @@ impl ApplicationHandler for App {
             return;
         }
         let attributes = Window::default_attributes().with_title("Horizon");
+        breadcrumb("resumed: creating the window");
         let window = match event_loop.create_window(attributes) {
             Ok(window) => Arc::new(window),
             Err(error) => {
                 log::error!("Horizon iOS: no window: {error}");
+                breadcrumb(&format!("resumed: no window: {error}"));
                 event_loop.exit();
                 return;
             }
         };
+        breadcrumb("resumed: window created");
         log::info!(
             "Horizon iOS: window {}x{} at scale {}",
             window.inner_size().width,
             window.inner_size().height,
             window.scale_factor()
         );
+        breadcrumb("resumed: opening the Metal surface");
         match Gpu::new(window.clone()) {
-            Ok(gpu) => self.gpu = Some(gpu),
+            Ok(gpu) => {
+                breadcrumb("resumed: Metal surface open");
+                self.gpu = Some(gpu)
+            }
             Err(error) => {
+                breadcrumb(&format!("resumed: no Metal surface: {error}"));
                 // Keep the app alive: the log says why the screen stays dark, and the player can
                 // still reach it from the Files app instead of facing a silent crash.
                 log::error!("Horizon iOS: the Metal surface did not open: {error}");
@@ -270,6 +311,10 @@ impl ApplicationHandler for App {
             }
             WindowEvent::Focused(false) => self.touches.cancel(),
             WindowEvent::RedrawRequested => {
+                if self.frames_drawn == 0 {
+                    breadcrumb("redraw: first frame");
+                }
+                self.frames_drawn = self.frames_drawn.saturating_add(1);
                 let input = self.frame_input();
                 if let Some(gpu) = self.gpu.as_mut()
                     && let Err(error) = gpu.render(&input)
