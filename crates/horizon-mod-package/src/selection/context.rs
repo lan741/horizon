@@ -17,6 +17,12 @@ pub fn data_dir_with(env: impl Fn(&str) -> Option<std::ffi::OsString>) -> PathBu
         if let Some(h) = &home {
             return h.join("Library/Application Support");
         }
+    } else if cfg!(target_os = "ios") {
+        // The app container's HOME is not writable outside these folders; Documents is the one
+        // the Files app shows, so worlds and options live where a player can reach them.
+        if let Some(h) = &home {
+            return h.join("Documents");
+        }
     } else if let Some(d) = path("XDG_DATA_HOME") {
         return d;
     } else if let Some(h) = &home {
@@ -69,6 +75,34 @@ impl LaunchArguments {
         } else {
             crate::manifest::Side::Client
         }
+    }
+
+    /// The running process's own arguments, for a platform that may not spawn a wrapper to hand
+    /// them over: an iOS app is started by the system and cannot fork or exec (docs/ios-port.md).
+    /// This is `for_command` with the process standing in for the command.
+    #[cfg(target_os = "ios")]
+    pub fn from_process() -> std::io::Result<Self> {
+        let cwd = std::env::current_dir()?;
+        let env = |key: &str| std::env::var_os(key);
+        let default_home = data_dir_with(env).join("horizon");
+        let args = std::env::args_os()
+            .skip(1)
+            .map(|arg| {
+                arg.into_string().map_err(|_| {
+                    std::io::Error::new(
+                        std::io::ErrorKind::InvalidInput,
+                        "game arguments must be valid UTF-8",
+                    )
+                })
+            })
+            .collect::<std::io::Result<Vec<_>>>()?;
+        Self::parse(
+            args.into_iter(),
+            &cwd,
+            &default_home,
+            env("HORIZON_HOME").as_deref(),
+        )
+        .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidInput, error))
     }
 
     /// Snapshot a managed game command before shell/overlay wrappers are applied.
